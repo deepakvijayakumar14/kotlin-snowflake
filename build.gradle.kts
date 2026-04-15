@@ -80,7 +80,7 @@ publishing {
                     developer {
                         id.set("deepakvijayakumar")
                         name.set("Deepak Vijayakumar")
-                        email.set("deepak@example.com")
+                        email.set("deepak.vijayakumar@gmail.com")
                     }
                 }
 
