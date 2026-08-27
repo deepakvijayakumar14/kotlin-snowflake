@@ -105,7 +105,11 @@ mavenPublishing {
     // Central rejects unsigned artifacts, but signing every local build would make a
     // GPG key a prerequisite for `publishToMavenLocal` and for CI. Sign only when a
     // key is actually configured.
-    if (providers.gradleProperty("signingInMemoryKey").isPresent) {
+    //
+    // Blank counts as absent, not present: GitHub Actions substitutes an empty string
+    // for a secret that does not exist, so an isPresent() check would try to sign with
+    // an empty key and fail with "no configured signatory".
+    if (!providers.gradleProperty("signingInMemoryKey").orNull.isNullOrBlank()) {
         signAllPublications()
     }
 
