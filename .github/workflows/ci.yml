@@ -37,28 +37,7 @@ jobs:
       - name: Detekt static analysis
         run: ./gradlew detekt
 
-  integration:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
-    environment: integration
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
-
-      - name: Run integration tests
-        env:
-          SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USERNAME:  ${{ secrets.SNOWFLAKE_USERNAME }}
-          SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
-          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-        run: ./gradlew integrationTest --no-daemon
+# The integration tests in src/integrationTest are not run in CI: they need a live
+# Snowflake account, and no SNOWFLAKE_* secrets are configured. A job here would
+# only ever report green without connecting to anything, which is worse than no job
+# at all. Run them by hand with `./gradlew integrationTest` once credentials exist.
