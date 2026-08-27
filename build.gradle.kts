@@ -57,6 +57,30 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+// -- Integration tests ------------------------------------------------------------
+// Live tests against a real Snowflake account, in src/integrationTest/kotlin.
+// Deliberately excluded from `check` so `./gradlew build` stays offline; run them
+// explicitly with `./gradlew integrationTest` and SNOWFLAKE_* set in the environment.
+
+val integrationTest: SourceSet by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+
+configurations["integrationTestImplementation"]
+    .extendsFrom(configurations.testImplementation.get())
+configurations["integrationTestRuntimeOnly"]
+    .extendsFrom(configurations.testRuntimeOnly.get())
+
+tasks.register<Test>("integrationTest") {
+    group       = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Runs integration tests against a live Snowflake account."
+
+    testClassesDirs = integrationTest.output.classesDirs
+    classpath       = integrationTest.runtimeClasspath
+    shouldRunAfter(tasks.test)
+}
+
 // -- Publishing (Maven Central) ---------------------------------------------------
 
 publishing {
