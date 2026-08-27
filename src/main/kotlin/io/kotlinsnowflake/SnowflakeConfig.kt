@@ -28,6 +28,12 @@ fun env(name: String): String =
 
 // -------------------------------------------------------------------------------------------------
 
+/** Default HikariCP pool size; matches Hikari's own default. */
+private const val DEFAULT_MAX_POOL_SIZE = 10
+
+/** Default JDBC fetch size, i.e. rows pulled from Snowflake per round trip while streaming. */
+private const val DEFAULT_FETCH_SIZE = 1_000
+
 /**
  * Immutable configuration for [SnowflakeClient].
  * Build via [SnowflakeConfig.Builder] or the [snowflake] DSL.
@@ -66,7 +72,7 @@ data class SnowflakeConfig(
         val maxLifetime: Duration,
     ) {
         class Builder {
-            var maxSize: Int              = 10
+            var maxSize: Int              = DEFAULT_MAX_POOL_SIZE
             var minIdle: Int              = 2
             var connectionTimeout: Duration = 30.seconds
             var idleTimeout: Duration      = 10.minutes
@@ -89,7 +95,7 @@ data class SnowflakeConfig(
         var warehouse: String?                 = null
         var role: String?                      = null
         var queryTimeout: Duration             = 5.minutes
-        var fetchSize: Int                     = 1_000
+        var fetchSize: Int                     = DEFAULT_FETCH_SIZE
         var dispatcher: CoroutineDispatcher    = Dispatchers.IO
 
         private var poolBuilder = PoolConfig.Builder()

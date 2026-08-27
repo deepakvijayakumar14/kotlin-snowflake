@@ -1,0 +1,21 @@
+# Detekt configuration for kotlin-snowflake.
+# Merged on top of detekt's default rule set (buildUponDefaultConfig = true in build.gradle.kts),
+# so only deliberate deviations from the defaults are listed here.
+
+build:
+  maxIssues: 0
+
+complexity:
+  LongParameterList:
+    # SnowflakeConfig is a wide, flat config data class built via a DSL builder.
+    functionThreshold: 8
+    constructorThreshold: 16
+  TooManyFunctions:
+    # Row exposes one typed accessor pair per SQL type.
+    thresholdInClasses: 40
+    thresholdInFiles: 40
+
+style:
+  MaxLineLength:
+    # The source uses aligned assignments, which run a little past detekt's default 120.
+    maxLineLength: 140

@@ -6,6 +6,7 @@ import io.kotlinsnowflake.SnowflakeConfig
 import org.slf4j.LoggerFactory
 import java.io.Closeable
 import java.sql.Connection
+import kotlin.time.Duration.Companion.hours
 
 /**
  * HikariCP connection pool configured for Snowflake.
@@ -34,7 +35,7 @@ internal class ConnectionPool(private val config: SnowflakeConfig) : Closeable {
             // Cheap liveness check - avoids full connection validation overhead
             connectionTestQuery = "SELECT 1"
             // Keep connections alive below Snowflake's 4-hour idle limit
-            keepaliveTime      = 3 * 60 * 60 * 1000L
+            keepaliveTime      = KEEPALIVE_INTERVAL.inWholeMilliseconds
             isAutoCommit       = true
             poolName           = "kotlin-snowflake-pool"
 
@@ -78,5 +79,10 @@ internal class ConnectionPool(private val config: SnowflakeConfig) : Closeable {
         params += "loginTimeout=30"
 
         append(params.joinToString("&"))
+    }
+
+    private companion object {
+        /** Stays below Snowflake's 4-hour idle connection timeout. */
+        private val KEEPALIVE_INTERVAL = 3.hours
     }
 }

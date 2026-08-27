@@ -198,6 +198,8 @@ class SnowflakeClient(private val config: SnowflakeConfig) : Closeable {
      * }
      * ```
      */
+    // Any failure inside the block must roll back, so the broad catch is deliberate.
+    @Suppress("TooGenericExceptionCaught")
     suspend fun <T> transaction(block: suspend TransactionScope.() -> T): T =
         withContext(config.dispatcher) {
             pool.borrow().use { conn ->
@@ -257,7 +259,13 @@ class SnowflakeClient(private val config: SnowflakeConfig) : Closeable {
 
 // -------------------------------------------------------------------------------------------------
 
-/** A SELECT query built via the DSL, ready to execute. */
+/**
+ * A SELECT query built via the DSL, ready to execute.
+ *
+ * The spread operator is unavoidable here: DSL params arrive as a [List] and the
+ * client's query/stream entry points take `vararg`.
+ */
+@Suppress("SpreadOperator")
 class PreparedSelect internal constructor(
     private val client: SnowflakeClient,
     private val sql: String,
