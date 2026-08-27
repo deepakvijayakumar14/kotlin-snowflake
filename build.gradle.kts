@@ -1,15 +1,18 @@
+import com.vanniktech.maven.publish.SonatypeHost
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version "1.9.23"
     `java-library`
-    `maven-publish`
-    signing
     id("org.jetbrains.dokka") version "1.9.20"
     id("io.gitlab.arturbosch.detekt") version "1.23.6"
+    // Applies maven-publish and signing, and uploads to the Central Portal.
+    id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
-group   = "io.kotlinsnowflake"
+// The Maven coordinates are io.github.<github-user>, which Central verifies through
+// GitHub account ownership. The Kotlin package namespace stays io.kotlinsnowflake.
+group   = "io.github.deepakvijayakumar14"
 version = "0.2.0"
 
 repositories {
@@ -51,8 +54,8 @@ tasks.withType<Test> {
 }
 
 java {
-    withJavadocJar()
-    withSourcesJar()
+    // The sources and javadoc jars come from the publish plugin, which builds the
+    // javadoc one from Dokka rather than the empty Java javadoc task.
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
 }
@@ -82,60 +85,59 @@ tasks.register<Test>("integrationTest") {
 }
 
 // -- Publishing (Maven Central) ---------------------------------------------------
+//
+// Uploads to the Central Portal at central.sonatype.com. The old OSSRH host
+// (s01.oss.sonatype.org) was decommissioned and no longer resolves.
+//
+// Credentials and the signing key are read from Gradle properties or the matching
+// environment variables, so nothing secret lives in this file:
+//
+//   ORG_GRADLE_PROJECT_mavenCentralUsername   Portal user token name
+//   ORG_GRADLE_PROJECT_mavenCentralPassword   Portal user token password
+//   ORG_GRADLE_PROJECT_signingInMemoryKey     ASCII-armoured GPG private key
+//   ORG_GRADLE_PROJECT_signingInMemoryKeyPassword
+//
+// Publish with: ./gradlew publishToMavenCentral
 
-publishing {
-    publications {
-        create<MavenPublication>("mavenJava") {
-            from(components["java"])
+mavenPublishing {
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
 
-            pom {
-                name.set("kotlin-snowflake")
-                description.set("Coroutine-native Kotlin client for Snowflake with idiomatic query DSL")
-                url.set("https://github.com/deepakvijayakumar/kotlin-snowflake")
-
-                licenses {
-                    license {
-                        name.set("MIT License")
-                        url.set("https://opensource.org/licenses/MIT")
-                    }
-                }
-
-                developers {
-                    developer {
-                        id.set("deepakvijayakumar")
-                        name.set("Deepak Vijayakumar")
-                        email.set("deepak.vijayakumar@gmail.com")
-                    }
-                }
-
-                scm {
-                    connection.set("scm:git:git://github.com/deepakvijayakumar/kotlin-snowflake.git")
-                    developerConnection.set("scm:git:ssh://github.com/deepakvijayakumar/kotlin-snowflake.git")
-                    url.set("https://github.com/deepakvijayakumar/kotlin-snowflake")
-                }
-            }
-        }
+    // Central rejects unsigned artifacts, but signing every local build would make a
+    // GPG key a prerequisite for `publishToMavenLocal` and for CI. Sign only when a
+    // key is actually configured.
+    if (providers.gradleProperty("signingInMemoryKey").isPresent) {
+        signAllPublications()
     }
 
-    repositories {
-        maven {
-            name = "sonatype"
-            url  = uri(
-                if (version.toString().endsWith("SNAPSHOT"))
-                    "https://s01.oss.sonatype.org/content/repositories/snapshots/"
-                else
-                    "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
-            )
-            credentials {
-                username = findProperty("ossrhUsername") as String? ?: System.getenv("OSSRH_USERNAME")
-                password = findProperty("ossrhPassword") as String? ?: System.getenv("OSSRH_PASSWORD")
+    coordinates(group.toString(), "kotlin-snowflake", version.toString())
+
+    pom {
+        name.set("kotlin-snowflake")
+        description.set("Coroutine-native Kotlin client for Snowflake with idiomatic query DSL")
+        url.set("https://github.com/deepakvijayakumar14/kotlin-snowflake")
+        inceptionYear.set("2026")
+
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://opensource.org/licenses/MIT")
             }
         }
-    }
-}
 
-signing {
-    sign(publishing.publications["mavenJava"])
+        developers {
+            developer {
+                id.set("deepakvijayakumar14")
+                name.set("Deepak Vijayakumar")
+                url.set("https://github.com/deepakvijayakumar14")
+            }
+        }
+
+        scm {
+            connection.set("scm:git:git://github.com/deepakvijayakumar14/kotlin-snowflake.git")
+            developerConnection.set("scm:git:ssh://github.com/deepakvijayakumar14/kotlin-snowflake.git")
+            url.set("https://github.com/deepakvijayakumar14/kotlin-snowflake")
+        }
+    }
 }
 
 detekt {
