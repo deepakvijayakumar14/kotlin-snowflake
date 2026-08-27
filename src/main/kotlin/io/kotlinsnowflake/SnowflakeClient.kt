@@ -32,10 +32,19 @@ import java.sql.Connection
  *
  * Remember to [close] the client (or use [use]) when done to release pool connections.
  */
-class SnowflakeClient(private val config: SnowflakeConfig) : Closeable {
+class SnowflakeClient internal constructor(
+    private val config: SnowflakeConfig,
+    private val pool: ConnectionPool,
+) : Closeable {
 
-    private val log  = LoggerFactory.getLogger(SnowflakeClient::class.java)
-    private val pool = ConnectionPool(config)
+    /**
+     * Creates a client backed by its own HikariCP connection pool.
+     * This is the constructor callers use; the pool-injecting one exists so tests can
+     * substitute a pool without opening a real connection.
+     */
+    constructor(config: SnowflakeConfig) : this(config, ConnectionPool(config))
+
+    private val log = LoggerFactory.getLogger(SnowflakeClient::class.java)
 
     // -- Query (list) -------------------------------------------------------------------------
 
