@@ -39,7 +39,7 @@ dependencies {
     implementation("net.snowflake:snowflake-jdbc:3.16.0")
 
     // Connection pooling
-    implementation("com.zaxxer:HikariCP:5.1.0")
+    implementation("com.zaxxer:HikariCP:7.1.0")
 
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.12")
