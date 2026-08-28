@@ -31,7 +31,7 @@ Useful individual tasks:
 | `./gradlew apiDump` | Regenerate `api/kotlin-snowflake.api` after an intentional API change |
 | `./gradlew koverHtmlReport` | Coverage report at `build/reports/kover/html/index.html` |
 | `./gradlew koverLog` | Print the coverage percentage |
-| `./gradlew dokkaHtml` | API documentation |
+| `./gradlew dokkaGenerateHtml` | API documentation |
 | `./gradlew integrationTest` | Live tests; needs credentials, see below |
 
 ## Integration tests

@@ -31,18 +31,14 @@ updates:
           - "org.jetbrains.dokka*"
           - "io.gitlab.arturbosch.detekt*"
 
-      # Drop-in test libraries. Kotest is deliberately absent: its majors rewrite the spec and
-      # config API this suite uses throughout, and that migration should not arrive in the same
-      # PR as a mockk patch.
-      test-utilities:
-        patterns:
-          - "io.mockk*"
-          - "ch.qos.logback*"
-
     # Ungrouped on purpose, each reviewed on its own:
     #   net.snowflake:snowflake-jdbc  - the driver whose behaviour this library wraps
     #   com.zaxxer:HikariCP           - PoolConfig's validation encodes its clamping thresholds
     #   io.kotest:*                   - major bumps are test-suite migrations
+    #   io.mockk:mockk                - 1.14+ pulls kotlin-stdlib 2.2, which the pinned
+    #                                   1.9.23 compiler cannot read; blocked like coroutines
+    #   ch.qos.logback:*              - genuinely drop-in, and the only test dependency that
+    #                                   is, so it has nothing left to be grouped with
     #   org.jetbrains.kotlin (`jvm`)  - the compiler pin, coupled to the publish plugin
     #   com.vanniktech.maven.publish  - pinned to 0.30.0, the last line supporting Kotlin 1.9.x
     commit-message:
