@@ -5,13 +5,13 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     kotlin("jvm") version "1.9.23"
     `java-library`
-    id("org.jetbrains.dokka") version "1.9.20"
-    id("io.gitlab.arturbosch.detekt") version "1.23.6"
-    id("org.jetbrains.kotlinx.kover") version "0.9.1"
+    id("org.jetbrains.dokka") version "2.2.0"
+    id("io.gitlab.arturbosch.detekt") version "1.23.8"
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
     // Fails the build when the public ABI drifts from api/kotlin-snowflake.api. Regenerate the
     // dump with `./gradlew apiDump` and review the diff - that diff is the compatibility story
     // a published library owes its consumers.
-    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.16.3"
+    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.18.1"
     // Applies maven-publish and signing, and uploads to the Central Portal.
     // 0.30.0 is the last line that supports Kotlin 1.9.x; 0.37.0 requires Kotlin Gradle
     // Plugin 2.2+.
