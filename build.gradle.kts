@@ -49,8 +49,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("io.mockk:mockk:1.13.10")
     testImplementation("ch.qos.logback:logback-classic:1.5.3")
-    testImplementation("io.kotest:kotest-runner-junit5:5.8.1")
-    testImplementation("io.kotest:kotest-assertions-core:5.8.1")
+    testImplementation("io.kotest:kotest-runner-junit5:6.2.4")
+    testImplementation("io.kotest:kotest-assertions-core:6.2.4")
 }
 
 tasks.withType<KotlinCompile> {
