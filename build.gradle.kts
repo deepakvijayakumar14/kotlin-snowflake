@@ -7,11 +7,11 @@ plugins {
     `java-library`
     id("org.jetbrains.dokka") version "1.9.20"
     id("io.gitlab.arturbosch.detekt") version "1.23.6"
-    id("org.jetbrains.kotlinx.kover") version "0.9.1"
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
     // Fails the build when the public ABI drifts from api/kotlin-snowflake.api. Regenerate the
     // dump with `./gradlew apiDump` and review the diff - that diff is the compatibility story
     // a published library owes its consumers.
-    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.16.3"
+    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.18.1"
     // Applies maven-publish and signing, and uploads to the Central Portal.
     // 0.30.0 is the last line that supports Kotlin 1.9.x; 0.37.0 requires Kotlin Gradle
     // Plugin 2.2+.
@@ -33,7 +33,7 @@ repositories {
 dependencies {
     // Kotlin
     implementation(kotlin("stdlib"))
-    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
     // Snowflake JDBC
     implementation("net.snowflake:snowflake-jdbc:3.16.0")
@@ -46,7 +46,7 @@ dependencies {
 
     // Test
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("io.mockk:mockk:1.13.10")
     testImplementation("ch.qos.logback:logback-classic:1.5.3")
     testImplementation("io.kotest:kotest-runner-junit5:5.8.1")
