@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-28
+
 ### Fixed
 
 - `stream()` threw `IllegalStateException` on every call. Both overloads emitted from
@@ -56,6 +58,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replacement, statement timeouts on every execution path, and configuration validation.
 - Integration tests that collect an actual stream, exercise OR semantics, check alias
   handling, and re-borrow the pool after early cancellation to catch a leaked connection.
+- `ReadmeSnippetsCompileCheck`, which compiles and runs every README example against a mocked
+  JDBC surface. The documentation errors above would not have compiled, and the DSL's documented
+  `OR` output is now pinned by an assertion rather than a comment.
+- Public ABI pinned in `api/kotlin-snowflake.api` via the binary-compatibility-validator plugin.
+  `apiCheck` runs as part of `check` and fails on unintended drift; regenerate with
+  `./gradlew apiDump`.
+- Line-coverage floor enforced by Kover as part of `check`, so a coverage regression fails the
+  same command that runs the tests. No hosted service is involved. Coverage is 95%, the floor 90%.
+  `ConnectionPool` is excluded: constructing it opens a real pool against a real account.
+- CI runs one `check` task across JDK 17 and 21, uploading test results and an HTML coverage
+  report as artifacts.
+- Dependabot for Gradle dependencies and GitHub Actions, grouped so routine bumps arrive as one
+  reviewable PR. The JDBC driver and HikariCP stay ungrouped - their behaviour is what this
+  library wraps.
+- Issue templates for bugs and feature requests, and a pull request template.
+- `RELEASING.md`, covering Central Portal setup, the dry-run-first release procedure, and the rule
+  that a change to driver-level wiring needs the live suite before it ships.
+- `printVersion` Gradle task, so the publish workflow reports the version it is about to upload
+  and refuses a `-SNAPSHOT`.
+- Unit coverage for every `WhereBuilder` operator, `PreparedSelect`'s fetch and stream paths,
+  `env()`, and the statement-preparation failure path.
 
 ### Changed
 
@@ -152,6 +175,7 @@ Initial development version. Never published to Maven Central.
 - HikariCP-backed connection pooling with Snowflake-specific defaults.
 - Password and key-pair authentication.
 
-[Unreleased]: https://github.com/deepakvijayakumar14/kotlin-snowflake/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/deepakvijayakumar14/kotlin-snowflake/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/deepakvijayakumar14/kotlin-snowflake/releases/tag/v0.3.0
 [0.2.0]: https://github.com/deepakvijayakumar14/kotlin-snowflake/releases/tag/v0.2.0
 [0.1.0]: https://github.com/deepakvijayakumar14/kotlin-snowflake/releases/tag/v0.1.0

@@ -1,0 +1,66 @@
+name: Bug report
+description: Something behaves differently from what the documentation says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most bugs here are about the SQL that reached Snowflake, the values bound to it, or a
+        resource that was not released. Including the generated SQL — `toSql()` on a DSL query —
+        usually identifies the problem on its own.
+
+  - type: input
+    id: version
+    attributes:
+      label: kotlin-snowflake version
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Kotlin / coroutines / JDK / Snowflake JDBC versions
+      placeholder: "Kotlin 1.9.23, coroutines 1.8.0, JDK 17, snowflake-jdbc 3.16.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: The call
+      description: The `query`, `stream`, `select`, `transaction` or `batch` call involved.
+      render: kotlin
+    validations:
+      required: true
+
+  - type: textarea
+    id: sql
+    attributes:
+      label: Generated SQL
+      description: For a DSL query, the output of `toSql()`. Redact anything sensitive.
+      render: sql
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the exception type and stack trace if one was thrown.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Sequence to reproduce
+      description: |
+        Ideally a failing test. Snowflake credentials are not needed to reproduce most
+        defects — the unit suite mocks the JDBC surface.
+      render: kotlin

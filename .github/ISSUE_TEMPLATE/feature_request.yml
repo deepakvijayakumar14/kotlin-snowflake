@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose an addition to the API
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The API is deliberately small, and it is a wrapper rather than an ORM or a schema DSL.
+        The most convincing request describes a real call site that is awkward today.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what makes it awkward with the current API?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      description: How it would read at a call site.
+      render: kotlin
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Including whether raw `query`/`execute` with your own SQL gets you close.
