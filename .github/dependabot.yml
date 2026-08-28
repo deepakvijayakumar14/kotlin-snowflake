@@ -1,25 +1,50 @@
 version: 2
 
+# Grouping trades review noise against blast radius. The rule here: group things that must
+# move together, and only those. The first run showed the cost of getting that wrong — a
+# `kotlin` group bundling coroutines with Kover and the ABI validator meant one blocked
+# coroutines bump held two safe plugin updates hostage, and a `test-dependencies` group
+# bundling Kotest with mockk did the same.
+
 updates:
-  # Kotlin, coroutines, the Snowflake driver, Hikari, slf4j and the Gradle plugins. Grouped so a
-  # routine version bump is one reviewable PR rather than six.
   - package-ecosystem: gradle
     directory: "/"
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
     groups:
-      kotlin:
+      # coroutines-core and coroutines-test must be the same version, and both carry Kotlin
+      # metadata the compiler has to be new enough to read. coroutines-core is also an `api`
+      # dependency, so its version is part of this library's contract. Grouped deliberately:
+      # these two fail together, so they should arrive together.
+      coroutines:
         patterns:
-          - "org.jetbrains.kotlin*"
-          - "org.jetbrains.kotlinx*"
-      test-dependencies:
+          - "org.jetbrains.kotlinx:kotlinx-coroutines*"
+
+      # Build tooling, independent of each other and of the compiler version. Split out of the
+      # old `kotlin` group, which matched these by their `org.jetbrains.kotlinx.*` plugin ids
+      # and dragged them down with coroutines.
+      build-tooling:
         patterns:
-          - "io.kotest*"
+          - "org.jetbrains.kotlinx.kover*"
+          - "org.jetbrains.kotlinx.binary-compatibility-validator*"
+          - "org.jetbrains.dokka*"
+          - "io.gitlab.arturbosch.detekt*"
+
+      # Drop-in test libraries. Kotest is deliberately absent: its majors rewrite the spec and
+      # config API this suite uses throughout, and that migration should not arrive in the same
+      # PR as a mockk patch.
+      test-utilities:
+        patterns:
           - "io.mockk*"
           - "ch.qos.logback*"
-    # The JDBC driver and the pool are the two dependencies whose behaviour this library
-    # actually depends on, so they stay ungrouped and get reviewed one at a time.
+
+    # Ungrouped on purpose, each reviewed on its own:
+    #   net.snowflake:snowflake-jdbc  - the driver whose behaviour this library wraps
+    #   com.zaxxer:HikariCP           - PoolConfig's validation encodes its clamping thresholds
+    #   io.kotest:*                   - major bumps are test-suite migrations
+    #   org.jetbrains.kotlin (`jvm`)  - the compiler pin, coupled to the publish plugin
+    #   com.vanniktech.maven.publish  - pinned to 0.30.0, the last line supporting Kotlin 1.9.x
     commit-message:
       prefix: build
 
