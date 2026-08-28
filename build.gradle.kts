@@ -33,7 +33,7 @@ repositories {
 dependencies {
     // Kotlin
     implementation(kotlin("stdlib"))
-    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
     // Snowflake JDBC
     implementation("net.snowflake:snowflake-jdbc:3.16.0")
@@ -46,7 +46,7 @@ dependencies {
 
     // Test
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("io.mockk:mockk:1.13.10")
     testImplementation("ch.qos.logback:logback-classic:1.5.3")
     testImplementation("io.kotest:kotest-runner-junit5:5.8.1")
