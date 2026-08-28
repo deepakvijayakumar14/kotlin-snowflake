@@ -176,11 +176,11 @@ class RowTest : DescribeSpec({
 
     describe("column metadata") {
 
-        it("reads column names from the result set metadata") {
+        it("reads column labels from the result set metadata") {
             val meta = mockk<ResultSetMetaData>()
             every { meta.columnCount } returns 2
-            every { meta.getColumnName(1) } returns "ID"
-            every { meta.getColumnName(2) } returns "NAME"
+            every { meta.getColumnLabel(1) } returns "ID"
+            every { meta.getColumnLabel(2) } returns "NAME"
 
             val rs = mockk<ResultSet>()
             every { rs.metaData } returns meta
@@ -190,16 +190,30 @@ class RowTest : DescribeSpec({
             row.columnNames shouldBe listOf("ID", "NAME")
         }
 
-        it("materializes the row as a map, preserving NULLs") {
+        it("reports the alias, not the underlying column, for a computed column") {
+            // SELECT SUM(SPEND) AS TOTAL_SPEND: getColumnName() reports SPEND (or ""),
+            // but TOTAL_SPEND is what callers address the column by.
             val meta = mockk<ResultSetMetaData>()
-            every { meta.columnCount } returns 2
-            every { meta.getColumnName(1) } returns "ID"
-            every { meta.getColumnName(2) } returns "NAME"
+            every { meta.columnCount } returns 1
+            every { meta.getColumnLabel(1) } returns "TOTAL_SPEND"
+            every { meta.getColumnName(1) } returns "SPEND"
 
             val rs = mockk<ResultSet>()
             every { rs.metaData } returns meta
-            every { rs.getString("ID") } returns "7"
-            every { rs.getString("NAME") } returns null
+
+            Row(rs).columnNames shouldBe listOf("TOTAL_SPEND")
+        }
+
+        it("materializes the row as a map, preserving NULLs") {
+            val meta = mockk<ResultSetMetaData>()
+            every { meta.columnCount } returns 2
+            every { meta.getColumnLabel(1) } returns "ID"
+            every { meta.getColumnLabel(2) } returns "NAME"
+
+            val rs = mockk<ResultSet>()
+            every { rs.metaData } returns meta
+            every { rs.getString(1) } returns "7"
+            every { rs.getString(2) } returns null
 
             Row(rs).toMap() shouldBe mapOf("ID" to "7", "NAME" to null)
         }

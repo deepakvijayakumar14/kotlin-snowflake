@@ -4,9 +4,12 @@ import io.kotlinsnowflake.pool.ConnectionPool
 import io.kotlinsnowflake.query.Row
 import io.kotlinsnowflake.query.RowMapper
 import io.kotlinsnowflake.query.SelectBuilder
+import io.kotlinsnowflake.query.toColumnMap
+import io.kotlinsnowflake.tx.BatchBinder
 import io.kotlinsnowflake.tx.TransactionScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.Closeable
@@ -15,8 +18,9 @@ import java.sql.Connection
 /**
  * Coroutine-native Kotlin client for Snowflake.
  *
- * All JDBC operations are dispatched on [SnowflakeConfig.dispatcher] (default: [Dispatchers.IO])
- * so they never block the calling coroutine's thread.
+ * All JDBC operations are dispatched on [SnowflakeConfig.dispatcher] (default:
+ * [kotlinx.coroutines.Dispatchers.IO]) so they never block the calling coroutine's thread,
+ * and every statement carries [SnowflakeConfig.queryTimeout].
  *
  * Create via the [snowflake] DSL:
  *
@@ -46,10 +50,14 @@ class SnowflakeClient internal constructor(
 
     private val log = LoggerFactory.getLogger(SnowflakeClient::class.java)
 
+    private val timeout = config.queryTimeoutSeconds
+
     // -- Query (list) -------------------------------------------------------------------------
 
     /**
      * Executes a SELECT and maps each row using [mapper].
+     * Results are fully materialized into memory before returning; use [stream] for
+     * result sets that should not be.
      *
      * ```kotlin
      * val campaigns = client.query("SELECT ID, NAME FROM CAMPAIGNS WHERE ACTIVE = ?", true) {
@@ -71,8 +79,8 @@ class SnowflakeClient internal constructor(
         }
 
     /**
-     * Executes a SELECT and returns raw [Row] objects.
-     * Results are fully materialized into memory before returning.
+     * Executes a SELECT and returns each row as a column-label-to-string map, for cases
+     * where the shape is not known up front. Results are fully materialized into memory.
      */
     suspend fun query(sql: String, vararg params: Any?): List<Map<String, String?>> =
         withContext(config.dispatcher) {
@@ -80,11 +88,7 @@ class SnowflakeClient internal constructor(
             pool.borrow().use { conn ->
                 conn.executeQuery(sql, params) { rs ->
                     val results = mutableListOf<Map<String, String?>>()
-                    while (rs.next()) {
-                        results += (1..rs.metaData.columnCount).associate {
-                            rs.metaData.getColumnName(it) to rs.getString(it)
-                        }
-                    }
+                    while (rs.next()) results += rs.toColumnMap()
                     results
                 }
             }
@@ -96,46 +100,43 @@ class SnowflakeClient internal constructor(
      * Streams query results as a [Flow], fetching [SnowflakeConfig.fetchSize] rows at a time.
      * Suitable for large result sets that should not be fully loaded into memory.
      *
+     * The connection is held for as long as the flow is collected and released when
+     * collection ends, including on cancellation.
+     *
      * ```kotlin
-     * client.stream("SELECT KEYWORD_ID, BID FROM KEYWORD_STATS")
-     *     .map { row -> ... }
-     *     .collect { ... }
+     * client.stream("SELECT KEYWORD_ID, BID FROM KEYWORD_STATS") { row ->
+     *     KeywordStat(row.long("KEYWORD_ID"), row.double("BID"))
+     * }.collect { ... }
      * ```
      */
-    fun <T> stream(sql: String, vararg params: Any?, mapper: RowMapper<T>): Flow<T> = flow {
-        withContext(config.dispatcher) {
+    fun <T> stream(sql: String, vararg params: Any?, mapper: RowMapper<T>): Flow<T> =
+        // The JDBC work runs on config.dispatcher via flowOn, not withContext: a flow may
+        // only emit from the context it was collected in, so the context change has to
+        // happen upstream of the emission rather than around it.
+        flow {
+            log.debug("stream: {}", sql)
             pool.borrow().use { conn ->
-                conn.prepareStatement(sql).use { ps ->
-                    ps.fetchSize = config.fetchSize
-                    params.forEachIndexed { i, v -> ps.setObject(i + 1, v) }
+                conn.streamStatement(sql, params).use { ps ->
                     ps.executeQuery().use { rs ->
                         val row = Row(rs)
                         while (rs.next()) emit(mapper.map(row))
                     }
                 }
             }
-        }
-    }
+        }.flowOn(config.dispatcher)
 
-    /** Streams raw [Row] objects as a [Flow]. */
-    fun stream(sql: String, vararg params: Any?): Flow<Map<String, String?>> = flow {
-        withContext(config.dispatcher) {
+    /** Streams rows as column-label-to-string maps. */
+    fun stream(sql: String, vararg params: Any?): Flow<Map<String, String?>> =
+        flow {
+            log.debug("stream (raw): {}", sql)
             pool.borrow().use { conn ->
-                conn.prepareStatement(sql).use { ps ->
-                    ps.fetchSize = config.fetchSize
-                    params.forEachIndexed { i, v -> ps.setObject(i + 1, v) }
+                conn.streamStatement(sql, params).use { ps ->
                     ps.executeQuery().use { rs ->
-                        while (rs.next()) {
-                            val map = (1..rs.metaData.columnCount).associate {
-                                rs.metaData.getColumnName(it) to rs.getString(it)
-                            }
-                            emit(map)
-                        }
+                        while (rs.next()) emit(rs.toColumnMap())
                     }
                 }
             }
-        }
-    }
+        }.flowOn(config.dispatcher)
 
     // -- Execute (DML) ------------------------------------------------------------------------
 
@@ -153,10 +154,7 @@ class SnowflakeClient internal constructor(
         withContext(config.dispatcher) {
             log.debug("execute: {}", sql)
             pool.borrow().use { conn ->
-                conn.prepareStatement(sql).use { ps ->
-                    params.forEachIndexed { i, v -> ps.setObject(i + 1, v) }
-                    ps.executeUpdate()
-                }
+                conn.prepared(sql, params, timeout).use { ps -> ps.executeUpdate() }
             }
         }
 
@@ -177,15 +175,14 @@ class SnowflakeClient internal constructor(
     suspend fun <T> batch(
         sql: String,
         rows: Iterable<T>,
-        binder: io.kotlinsnowflake.tx.BatchBinder.(T) -> Unit
+        binder: BatchBinder.(T) -> Unit
     ): IntArray =
         withContext(config.dispatcher) {
             log.debug("batch: {}", sql)
             pool.borrow().use { conn ->
-                conn.prepareStatement(sql).use { ps ->
+                conn.prepared(sql, emptyArray(), timeout).use { ps ->
                     rows.forEach { item ->
-                        val b = io.kotlinsnowflake.tx.BatchBinder(ps)
-                        b.binder(item)
+                        BatchBinder(ps).binder(item)
                         ps.addBatch()
                     }
                     ps.executeBatch()
@@ -197,7 +194,8 @@ class SnowflakeClient internal constructor(
 
     /**
      * Executes [block] within a database transaction.
-     * The transaction is committed on success or rolled back on any exception.
+     * The transaction is committed on success or rolled back on any failure, including
+     * cancellation.
      *
      * ```kotlin
      * val result = client.transaction {
@@ -214,15 +212,26 @@ class SnowflakeClient internal constructor(
             pool.borrow().use { conn ->
                 conn.autoCommit = false
                 try {
-                    val result = TransactionScope(conn).block()
+                    val result = TransactionScope(conn, timeout).block()
                     conn.commit()
                     result
-                } catch (ex: Exception) {
-                    log.warn("Transaction rolled back due to: {}", ex.message)
-                    conn.rollback()
-                    throw ex
+                } catch (original: Throwable) {
+                    log.warn("Transaction rolled back due to: {}", original.message)
+                    try {
+                        conn.rollback()
+                    } catch (rollbackFailure: Throwable) {
+                        // The application's exception explains what went wrong; a failed
+                        // rollback is a detail of the cleanup, so it rides along suppressed
+                        // rather than replacing it.
+                        original.addSuppressed(rollbackFailure)
+                    }
+                    throw original
                 } finally {
-                    conn.autoCommit = true
+                    // A connection returned to the pool with autoCommit still off would
+                    // silently swallow the next borrower's writes. If restoring it fails the
+                    // connection is broken anyway; don't let that mask the real failure.
+                    runCatching { conn.autoCommit = true }
+                        .onFailure { log.warn("Failed to restore autoCommit: {}", it.message) }
                 }
             }
         }
@@ -254,12 +263,11 @@ class SnowflakeClient internal constructor(
         sql: String,
         params: Array<out Any?>,
         block: (java.sql.ResultSet) -> T
-    ): T = prepareStatement(sql).use { ps ->
-        params.forEachIndexed { i, v -> ps.setObject(i + 1, v) }
-        val timeoutSecs = config.queryTimeout.inWholeSeconds.toInt()
-        if (timeoutSecs > 0) ps.queryTimeout = timeoutSecs
-        ps.executeQuery().use(block)
-    }
+    ): T = prepared(sql, params, timeout).use { ps -> ps.executeQuery().use(block) }
+
+    /** A statement configured to pull rows in [SnowflakeConfig.fetchSize] batches. */
+    private fun Connection.streamStatement(sql: String, params: Array<out Any?>) =
+        prepared(sql, params, timeout).apply { fetchSize = config.fetchSize }
 
     // -- Lifecycle ----------------------------------------------------------------------------
 
@@ -284,13 +292,17 @@ class PreparedSelect internal constructor(
     suspend fun <T> fetch(mapper: RowMapper<T>): List<T> =
         client.query(sql, *params.toTypedArray(), mapper = mapper)
 
-    /** Fetch raw rows as column-name-to-string maps. */
+    /** Fetch raw rows as column-label-to-string maps. */
     suspend fun fetch(): List<Map<String, String?>> =
         client.query(sql, *params.toTypedArray())
 
     /** Stream results as a [Flow] mapped by [mapper]. */
     fun <T> stream(mapper: RowMapper<T>): Flow<T> =
         client.stream(sql, *params.toTypedArray(), mapper = mapper)
+
+    /** Stream raw rows as column-label-to-string maps. */
+    fun stream(): Flow<Map<String, String?>> =
+        client.stream(sql, *params.toTypedArray())
 
     /** Returns the generated SQL (useful for debugging). */
     fun toSql(): String = sql

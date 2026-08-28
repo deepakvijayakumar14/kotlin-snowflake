@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `stream()` threw `IllegalStateException` on every call. Both overloads emitted from
+  inside a `withContext(config.dispatcher)` block, which violates the flow invariant that
+  a `flow { }` may only emit in the context it was collected in. The JDBC work now runs
+  upstream via `flowOn`. No test collected a stream, so nothing caught it: the integration
+  test named "streams rows via the query DSL" called `fetch()`.
+- **`or { }` generated `AND`.** The DSL rendered predicates to a flat string as they were
+  declared, so a group's combinator was lost by the time it was appended. `WHERE X = ? AND
+  (STATUS = ? AND STATUS = ?)` can never match. Predicates are now built as a tree that
+  keeps its combinator until SQL is generated, and `and { }` was added for symmetry.
+- The pool's keepalive never ran. Hikari disables a `keepaliveTime` at or beyond
+  `maxLifetime`, and the hard-coded 3 hours sat well beyond the 30-minute default. The
+  interval is now configurable, defaults to 5 minutes, and is validated against
+  `maxLifetime`.
+- `queryTimeout` was applied only to mapped and raw `query()`. `stream()`, `execute()`,
+  `batch()` and every statement inside a `transaction { }` ran with no limit. All
+  statements now go through one helper that applies it.
+- A failed rollback replaced the exception that caused it, hiding what the transaction
+  actually failed on. The original is now rethrown with the rollback failure attached as
+  suppressed. `transaction` also catches `Throwable` rather than `Exception`, so an
+  `Error` or a cancellation rolls back instead of leaving the transaction open on a
+  connection headed back to the pool.
+- `SelectBuilder` kept WHERE and HAVING bind values in one list, so declaring `having()`
+  before `where()` bound them in the wrong order. They are now tracked separately and
+  emitted WHERE-first, matching the generated SQL. Repeated `where()` or `having()` calls
+  replace the previous clause *and* its parameters; previously the clause was replaced but
+  its parameters were kept.
+- Raw result maps and `Row.columnNames` reported `getColumnName()`, which drops aliases:
+  `SELECT SUM(SPEND) AS TOTAL_SPEND` was keyed by the underlying column rather than by
+  `TOTAL_SPEND`, which is what callers address. They now use `getColumnLabel()`, and values
+  are read by index so duplicate labels do not collapse.
+- A `queryTimeout` of `Duration.INFINITE` truncated to `-1` seconds, and a sub-second one
+  truncated to `0`, which JDBC reads as "no limit" - the opposite of what was asked for.
+
+### Added
+
+- Configuration validation at construction for settings that Hikari or the driver would
+  otherwise clamp or ignore: `fetchSize`, `maxSize`, `minIdle`, `connectionTimeout`,
+  `idleTimeout`, `maxLifetime`, `keepaliveTime` and `queryTimeout`.
+- `pool { keepaliveTime = ... }`. `Duration.ZERO` disables it.
+- `and { }` inside a `where { }` block, and `raw()` for a predicate the DSL does not cover.
+- `PreparedSelect.stream()` without a mapper, matching the existing `fetch()` overload.
+- Unit coverage for streaming: emission across dispatchers, resource release on completion
+  and on early collector cancellation, fetch size, timeout, and parameter binding.
+- Unit coverage for `or`/`and` grouping, WHERE/HAVING parameter ordering, clause
+  replacement, statement timeouts on every execution path, and configuration validation.
+- Integration tests that collect an actual stream, exercise OR semantics, check alias
+  handling, and re-borrow the pool after early cancellation to catch a leaked connection.
+
+### Changed
+
+- **Breaking:** `password` and `privateKeyPath` are now mutually exclusive, and a blank
+  value counts as absent. Setting both previously left one silently ignored.
+- **Breaking:** `SnowflakeConfig.PoolConfig` takes a `keepaliveTime`. Configure the pool
+  through `pool { }` rather than constructing `PoolConfig` directly.
+- **Breaking:** `or { }` now generates `OR`. Any query relying on the old `AND` output was
+  matching nothing.
+- README no longer claims reified-generic data class mapping, a type-safe DSL, or
+  Snowflake-specific type support, none of which the library provides; it documents what it
+  does provide, and what it deliberately does not.
+
+### Known limitations
+
+- The live integration suite has still not been run: it requires Snowflake credentials that
+  are not available. The streaming and OR fixes are verified against mocked JDBC only.
+
 ## [0.2.0] - 2026-08-27
 
 First release published to Maven Central.

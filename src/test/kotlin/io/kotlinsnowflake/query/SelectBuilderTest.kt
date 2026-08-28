@@ -1,5 +1,6 @@
 package io.kotlinsnowflake.query
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -139,7 +140,7 @@ class SelectBuilderTest : DescribeSpec({
 
     describe("WhereBuilder OR groups") {
 
-        it("wraps OR predicates in parentheses") {
+        it("joins an OR group with OR and parenthesizes it") {
             val builder = SelectBuilder().apply {
                 from("CAMPAIGNS")
                 where {
@@ -150,7 +151,115 @@ class SelectBuilderTest : DescribeSpec({
                     }
                 }
             }
-            builder.buildSql() shouldContain "AND (STATUS = ? AND STATUS = ?)"
+            // The AND this used to generate made the predicate unsatisfiable: a row
+            // cannot have two different statuses at once.
+            builder.buildSql() shouldContain
+                "WHERE ACCOUNT_ID = ? AND (STATUS = ? OR STATUS = ?)"
+            builder.params() shouldBe listOf(42L, "ACTIVE", "PAUSED")
+        }
+
+        it("needs no parentheses when the OR group is the whole clause") {
+            val builder = SelectBuilder().apply {
+                from("CAMPAIGNS")
+                where {
+                    or {
+                        "STATUS" eq "ACTIVE"
+                        "STATUS" eq "PAUSED"
+                    }
+                }
+            }
+            builder.buildSql() shouldContain "WHERE STATUS = ? OR STATUS = ?"
+        }
+
+        it("nests AND groups inside an OR group") {
+            val builder = SelectBuilder().apply {
+                from("CAMPAIGNS")
+                where {
+                    or {
+                        and {
+                            "STATUS" eq "ACTIVE"
+                            "BID" gt 0.10
+                        }
+                        and {
+                            "STATUS" eq "PAUSED"
+                            "BID" gt 1.00
+                        }
+                    }
+                }
+            }
+            builder.buildSql() shouldContain
+                "WHERE (STATUS = ? AND BID > ?) OR (STATUS = ? AND BID > ?)"
+            builder.params() shouldBe listOf("ACTIVE", 0.10, "PAUSED", 1.00)
+        }
+
+        it("contributes nothing for an empty group") {
+            val builder = SelectBuilder().apply {
+                from("CAMPAIGNS")
+                where {
+                    "STATUS" eq "ACTIVE"
+                    or { }
+                }
+            }
+            builder.buildSql() shouldBe "SELECT * FROM CAMPAIGNS WHERE STATUS = ?"
+        }
+    }
+
+    describe("clause and parameter bookkeeping") {
+
+        it("orders parameters WHERE-first regardless of DSL call order") {
+            val builder = SelectBuilder().apply {
+                columns("ACCOUNT_ID", "SUM(SPEND) AS TOTAL")
+                from("AD_PERFORMANCE")
+                groupBy("ACCOUNT_ID")
+                having("SUM(SPEND) > ?", 1000.0)
+                where { "STATUS" eq "ACTIVE" }
+            }
+
+            // HAVING was declared first, but WHERE comes first in the SQL, so its
+            // placeholder is bound first.
+            builder.buildSql() shouldContain "WHERE STATUS = ?"
+            builder.params() shouldBe listOf("ACTIVE", 1000.0)
+        }
+
+        it("replaces both clause and parameters when where() is called twice") {
+            val builder = SelectBuilder().apply {
+                from("KEYWORDS")
+                where { "STATUS" eq "ACTIVE" }
+                where { "BID" gt 0.10 }
+            }
+
+            builder.buildSql() shouldContain "WHERE BID > ?"
+            builder.buildSql() shouldNotContain "STATUS"
+            builder.params() shouldBe listOf(0.10)
+        }
+
+        it("replaces both clause and parameters when having() is called twice") {
+            val builder = SelectBuilder().apply {
+                from("AD_PERFORMANCE")
+                groupBy("ACCOUNT_ID")
+                having("SUM(SPEND) > ?", 1000.0)
+                having("COUNT(*) > ?", 5)
+            }
+
+            builder.buildSql() shouldContain "HAVING COUNT(*) > ?"
+            builder.params() shouldBe listOf(5)
+        }
+
+        it("replaces a DSL WHERE with a raw one") {
+            val builder = SelectBuilder().apply {
+                from("KEYWORDS")
+                where { "STATUS" eq "ACTIVE" }
+                whereRaw("BID BETWEEN ? AND ?", 0.10, 1.00)
+            }
+
+            builder.buildSql() shouldContain "WHERE BID BETWEEN ? AND ?"
+            builder.params() shouldBe listOf(0.10, 1.00)
+        }
+
+        it("rejects a non-positive limit and a negative offset") {
+            shouldThrow<IllegalArgumentException> { SelectBuilder().limit(0) }
+            shouldThrow<IllegalArgumentException> { SelectBuilder().limit(-1) }
+            shouldThrow<IllegalArgumentException> { SelectBuilder().offset(-1) }
         }
     }
 })
