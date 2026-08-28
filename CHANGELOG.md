@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **HikariCP 5.1.0 -> 7.1.0.** A transitive dependency consumers inherit, and the one bump
+  here with any behavioural risk: `PoolConfig`'s validation encodes Hikari's own clamping
+  thresholds, so a change to them would have silently made that validation wrong. Checked
+  `validateNumerics` in 7.1.0 directly - the 30s lifetime floor, 10s idle floor, 2s leak
+  threshold and `SOFT_TIMEOUT_FLOOR` are unchanged, every setter `ConnectionPool` uses is
+  still present, and the jar targets Java 11 bytecode.
+- slf4j-api 2.0.12 -> 2.0.18. Patch bump of the logging facade, also transitive.
+- Build tooling: Dokka 1.9.20 -> 2.2.0, Kover 0.9.1 -> 0.9.9,
+  binary-compatibility-validator 0.16.3 -> 0.18.1, detekt 1.23.6 -> 1.23.8. `check` does not
+  run Dokka, so the javadoc jar was verified by hand through `publishToMavenLocal` rather
+  than inferred from a green build.
+- Gradle wrapper 9.3.0 -> 9.7.1.
+- CI actions: checkout v4 -> v7, setup-java v4 -> v6, upload-artifact v4 -> v7. Clears the
+  Node 20 deprecation warnings that were annotating every run.
+- Dependabot groups split so a blocked bump stops holding safe ones. A `kotlin` group
+  matching `org.jetbrains.kotlinx*` had been catching Kover and the ABI validator by their
+  plugin ids alongside coroutines, and a `test-dependencies` group did the same to logback
+  via Kotest. Grouping is now limited to members that genuinely must move together.
+
+### Fixed
+
+- `CONTRIBUTING.md` documented `./gradlew dokkaHtml`, which Dokka 2 renames to
+  `dokkaGenerateHtml`. The old name survives as a disabled V1 stub that reports `SKIPPED`,
+  so the documented command would have appeared to succeed while generating nothing.
+
+### Not upgraded
+
+Kotlin is pinned to 1.9.23, because the Maven Publish Plugin is pinned to 0.30.0 - the last
+line supporting Kotlin 1.9.x. Anything whose artifacts carry Kotlin 2.2 metadata is blocked
+behind that upgrade, which has to move the compiler, the publish plugin, detekt and the
+compiler-options DSL together:
+
+- kotlinx-coroutines stays at 1.8.0. It is an `api` dependency, so this is part of the
+  published contract.
+- Kotest stays at 5.8.1; 6.x also rewrites the spec and config API this suite uses.
+- mockk stays at 1.13.10. Not its own API - 1.14+ pulls `kotlin-stdlib` 2.2 transitively,
+  which resolves the whole test classpath past what the compiler can read.
+
+The Snowflake JDBC driver stays at 3.16.0. A major bump is available, but `ConnectionPool`
+is the one class with no unit coverage, so it needs the live integration suite rather than a
+green `check`.
+
 ## [0.3.0] - 2026-08-28
 
 ### Fixed
