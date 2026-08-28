@@ -8,6 +8,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import io.mockk.verifyOrder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import java.sql.Connection
 import java.sql.SQLException
@@ -119,15 +120,57 @@ class SnowflakeClientTransactionTest : DescribeSpec({
             }
         }
 
-        it("restores autoCommit even when the rollback also fails") {
+        it("keeps the original failure when the rollback also fails") {
+            val conn = mockk<Connection>(relaxed = true)
+            val rollbackFailure = SQLException("rollback failed")
+            every { conn.rollback() } throws rollbackFailure
+
+            val thrown = shouldThrow<IllegalStateException> {
+                clientOver(conn).transaction { throw IllegalStateException("block failed") }
+            }
+
+            // The block's exception is what the caller can act on; the rollback failure
+            // is cleanup detail, so it rides along rather than replacing it.
+            thrown.message shouldBe "block failed"
+            thrown.suppressed.toList() shouldBe listOf(rollbackFailure)
+        }
+
+        it("restores autoCommit and releases the connection when the rollback fails") {
             val conn = mockk<Connection>(relaxed = true)
             every { conn.rollback() } throws SQLException("rollback failed")
 
-            shouldThrow<SQLException> {
+            shouldThrow<IllegalStateException> {
                 clientOver(conn).transaction { throw IllegalStateException("block failed") }
             }
 
             // The finally block must still run, or this connection poisons the pool.
+            verify { conn.autoCommit = true }
+            verify { conn.close() }
+        }
+
+        it("rolls back when the block fails with an Error rather than an Exception") {
+            val conn = mockk<Connection>(relaxed = true)
+
+            shouldThrow<StackOverflowError> {
+                clientOver(conn).transaction { throw StackOverflowError("deep") }
+            }
+
+            // Catching Exception would have let this commit-less path skip the rollback,
+            // leaving the transaction open on a connection headed back to the pool.
+            verify { conn.rollback() }
+            verify(exactly = 0) { conn.commit() }
+            verify { conn.autoCommit = true }
+        }
+
+        it("rolls back when the caller's coroutine is cancelled mid-block") {
+            val conn = mockk<Connection>(relaxed = true)
+
+            shouldThrow<CancellationException> {
+                clientOver(conn).transaction { throw CancellationException("cancelled") }
+            }
+
+            verify { conn.rollback() }
+            verify(exactly = 0) { conn.commit() }
             verify { conn.autoCommit = true }
             verify { conn.close() }
         }

@@ -6,7 +6,6 @@ import io.kotlinsnowflake.SnowflakeConfig
 import org.slf4j.LoggerFactory
 import java.io.Closeable
 import java.sql.Connection
-import kotlin.time.Duration.Companion.hours
 
 /**
  * HikariCP connection pool configured for Snowflake.
@@ -15,7 +14,8 @@ import kotlin.time.Duration.Companion.hours
  * - JDBC connection string with account, database, schema, warehouse, role
  * - autoCommit = true (Snowflake default)
  * - connectionTestQuery = "SELECT 1" (cheap liveness check)
- * - keepaliveTime set to prevent idle connection drops from Snowflake's 4-hour timeout
+ * - keepaliveTime from [SnowflakeConfig.PoolConfig], which validates that it is shorter
+ *   than maxLifetime - Hikari disables a keepalive that is not
  */
 internal class ConnectionPool(private val config: SnowflakeConfig) : Closeable {
 
@@ -34,14 +34,15 @@ internal class ConnectionPool(private val config: SnowflakeConfig) : Closeable {
             maxLifetime        = config.pool.maxLifetime.inWholeMilliseconds
             // Cheap liveness check - avoids full connection validation overhead
             connectionTestQuery = "SELECT 1"
-            // Keep connections alive below Snowflake's 4-hour idle limit
-            keepaliveTime      = KEEPALIVE_INTERVAL.inWholeMilliseconds
+            keepaliveTime      = config.pool.keepaliveTime.inWholeMilliseconds
             isAutoCommit       = true
             poolName           = "kotlin-snowflake-pool"
 
             // Key-pair auth properties
             if (config.privateKeyPath != null) {
                 addDataSourceProperty("private_key_file", config.privateKeyPath)
+                // private_key_file_pwd, not private_key_pwd: the latter does not exist in
+                // SFSessionProperty for the pinned driver (3.16.0) and would be ignored.
                 config.privateKeyPassphrase?.let {
                     addDataSourceProperty("private_key_file_pwd", it)
                 }
@@ -79,10 +80,5 @@ internal class ConnectionPool(private val config: SnowflakeConfig) : Closeable {
         params += "loginTimeout=30"
 
         append(params.joinToString("&"))
-    }
-
-    private companion object {
-        /** Stays below Snowflake's 4-hour idle connection timeout. */
-        private val KEEPALIVE_INTERVAL = 3.hours
     }
 }

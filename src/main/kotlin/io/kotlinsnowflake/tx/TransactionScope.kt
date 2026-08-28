@@ -1,14 +1,18 @@
 package io.kotlinsnowflake.tx
 
+import io.kotlinsnowflake.prepared
 import io.kotlinsnowflake.query.Row
 import io.kotlinsnowflake.query.RowMapper
+import io.kotlinsnowflake.query.toColumnMap
 import java.sql.Connection
 
 /**
  * Provides transactional query execution within a [SnowflakeClient.transaction] block.
  *
- * All operations execute on the same [Connection] with autoCommit disabled.
- * The transaction is committed automatically on successful completion or rolled back on any exception.
+ * All operations execute on the same [Connection] with autoCommit disabled, and carry the
+ * same statement timeout as queries issued outside a transaction.
+ * The transaction is committed automatically on successful completion or rolled back on any
+ * exception.
  *
  * ```kotlin
  * val status = client.transaction {
@@ -18,23 +22,22 @@ import java.sql.Connection
  * }
  * ```
  */
-class TransactionScope internal constructor(private val connection: Connection) {
+class TransactionScope internal constructor(
+    private val connection: Connection,
+    private val timeoutSeconds: Int,
+) {
 
     /**
      * Executes a DML statement (INSERT, UPDATE, DELETE) and returns the affected row count.
      */
     fun execute(sql: String, vararg params: Any?): Int =
-        connection.prepareStatement(sql).use { ps ->
-            params.forEachIndexed { i, v -> ps.setObject(i + 1, v) }
-            ps.executeUpdate()
-        }
+        connection.prepared(sql, params, timeoutSeconds).use { ps -> ps.executeUpdate() }
 
     /**
      * Executes a SELECT and maps results using the provided [mapper].
      */
     fun <T> query(sql: String, vararg params: Any?, mapper: RowMapper<T>): List<T> =
-        connection.prepareStatement(sql).use { ps ->
-            params.forEachIndexed { i, v -> ps.setObject(i + 1, v) }
+        connection.prepared(sql, params, timeoutSeconds).use { ps ->
             ps.executeQuery().use { rs ->
                 val results = mutableListOf<T>()
                 val row = Row(rs)
@@ -44,16 +47,15 @@ class TransactionScope internal constructor(private val connection: Connection) 
         }
 
     /**
-     * Executes a SELECT and returns rows as column-name-to-string maps.
-     * Note: [Row] is tied to the [ResultSet] lifetime, so results are materialized
+     * Executes a SELECT and returns rows as column-label-to-string maps.
+     * Note: [Row] is tied to the [java.sql.ResultSet] lifetime, so results are materialized
      * into maps before the ResultSet is closed.
      */
     fun query(sql: String, vararg params: Any?): List<Map<String, String?>> =
-        connection.prepareStatement(sql).use { ps ->
-            params.forEachIndexed { i, v -> ps.setObject(i + 1, v) }
+        connection.prepared(sql, params, timeoutSeconds).use { ps ->
             ps.executeQuery().use { rs ->
                 val rows = mutableListOf<Map<String, String?>>()
-                while (rs.next()) rows += Row(rs).toMap()
+                while (rs.next()) rows += rs.toColumnMap()
                 rows
             }
         }
@@ -62,7 +64,7 @@ class TransactionScope internal constructor(private val connection: Connection) 
      * Executes multiple DML statements as a JDBC batch, returning per-statement update counts.
      */
     fun <T> batch(sql: String, items: Iterable<T>, binder: BatchBinder.(T) -> Unit): IntArray =
-        connection.prepareStatement(sql).use { ps ->
+        connection.prepared(sql, emptyArray(), timeoutSeconds).use { ps ->
             items.forEach { item ->
                 val b = BatchBinder(ps)
                 b.binder(item)

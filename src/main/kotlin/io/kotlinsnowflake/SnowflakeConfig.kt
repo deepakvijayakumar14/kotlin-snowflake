@@ -1,6 +1,7 @@
 package io.kotlinsnowflake
 
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineDispatcher
@@ -37,6 +38,9 @@ private const val DEFAULT_FETCH_SIZE = 1_000
 /**
  * Immutable configuration for [SnowflakeClient].
  * Build via [SnowflakeConfig.Builder] or the [snowflake] DSL.
+ *
+ * @param queryTimeout applied to every statement this client issues, as
+ *   [java.sql.Statement.setQueryTimeout]. [Duration.ZERO] means no limit.
  */
 data class SnowflakeConfig(
     val account: String,
@@ -57,28 +61,119 @@ data class SnowflakeConfig(
     init {
         require(account.isNotBlank()) { "account must not be blank" }
         require(username.isNotBlank()) { "username must not be blank" }
-        require(password != null || privateKeyPath != null) {
+
+        // Blank counts as absent: an unset environment variable that resolves to "" would
+        // otherwise look like a credential and fail much later, at connect time.
+        val hasPassword = !password.isNullOrBlank()
+        val hasKeyPair  = !privateKeyPath.isNullOrBlank()
+        require(hasPassword || hasKeyPair) {
             "Either password or privateKeyPath must be provided"
         }
+        require(!(hasPassword && hasKeyPair)) {
+            "Set either password or privateKeyPath, not both: the driver would silently " +
+                "pick one and the other would look configured but be ignored"
+        }
+        require(privateKeyPassphrase == null || hasKeyPair) {
+            "privateKeyPassphrase was set without privateKeyPath"
+        }
+
+        require(queryTimeout.isFinite() && !queryTimeout.isNegative()) {
+            "queryTimeout must be a finite, non-negative duration, was $queryTimeout"
+        }
+        require(fetchSize > 0) { "fetchSize must be positive, was $fetchSize" }
     }
+
+    /**
+     * [queryTimeout] as whole seconds, clamped to the `int` that JDBC accepts.
+     * `0` disables the timeout; a sub-second timeout rounds up to 1s rather than to
+     * `0`, which JDBC would read as "no limit" - the opposite of what was asked for.
+     */
+    internal val queryTimeoutSeconds: Int =
+        when {
+            queryTimeout == Duration.ZERO -> 0
+            else -> queryTimeout.inWholeSeconds.coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+        }
 
     // -- Pool config ---------------------------------------------------------------------------
 
+    /**
+     * HikariCP pool settings.
+     *
+     * Values that Hikari would silently clamp or ignore are rejected here instead, so a
+     * misconfigured pool fails at construction rather than quietly not doing its job.
+     *
+     * @param keepaliveTime how often an idle connection is pinged. Must be shorter than
+     *   [maxLifetime] or Hikari disables it. [Duration.ZERO] turns keepalive off.
+     */
     data class PoolConfig(
         val maxSize: Int,
         val minIdle: Int,
         val connectionTimeout: Duration,
         val idleTimeout: Duration,
         val maxLifetime: Duration,
+        val keepaliveTime: Duration,
     ) {
-        class Builder {
-            var maxSize: Int              = DEFAULT_MAX_POOL_SIZE
-            var minIdle: Int              = 2
-            var connectionTimeout: Duration = 30.seconds
-            var idleTimeout: Duration      = 10.minutes
-            var maxLifetime: Duration      = 30.minutes
 
-            internal fun build() = PoolConfig(maxSize, minIdle, connectionTimeout, idleTimeout, maxLifetime)
+        init {
+            require(maxSize > 0) { "pool.maxSize must be positive, was $maxSize" }
+            require(minIdle in 0..maxSize) {
+                "pool.minIdle must be between 0 and maxSize ($maxSize), was $minIdle"
+            }
+            require(connectionTimeout >= HIKARI_CONNECTION_TIMEOUT_FLOOR) {
+                "pool.connectionTimeout must be at least $HIKARI_CONNECTION_TIMEOUT_FLOOR, " +
+                    "was $connectionTimeout (Hikari would raise it to its 30s default)"
+            }
+            require(maxLifetime >= HIKARI_LIFETIME_FLOOR) {
+                "pool.maxLifetime must be at least $HIKARI_LIFETIME_FLOOR, was $maxLifetime " +
+                    "(Hikari would replace it with its 30min default)"
+            }
+            require(idleTimeout == Duration.ZERO || idleTimeout >= HIKARI_IDLE_TIMEOUT_FLOOR) {
+                "pool.idleTimeout must be zero or at least $HIKARI_IDLE_TIMEOUT_FLOOR, " +
+                    "was $idleTimeout"
+            }
+            // Hikari's own test is idleTimeout + 1s > maxLifetime, so leave that margin.
+            require(idleTimeout + 1.seconds <= maxLifetime) {
+                "pool.idleTimeout ($idleTimeout) must be at least a second shorter than " +
+                    "maxLifetime ($maxLifetime) or Hikari disables it"
+            }
+            require(keepaliveTime == Duration.ZERO || keepaliveTime >= HIKARI_LIFETIME_FLOOR) {
+                "pool.keepaliveTime must be zero or at least $HIKARI_LIFETIME_FLOOR, " +
+                    "was $keepaliveTime (Hikari would disable it)"
+            }
+            require(keepaliveTime < maxLifetime) {
+                "pool.keepaliveTime ($keepaliveTime) must be shorter than maxLifetime " +
+                    "($maxLifetime) or Hikari disables it, leaving connections unprobed"
+            }
+        }
+
+        class Builder {
+            var maxSize: Int                = DEFAULT_MAX_POOL_SIZE
+            var minIdle: Int                = 2
+            var connectionTimeout: Duration = 30.seconds
+            var idleTimeout: Duration       = 10.minutes
+            var maxLifetime: Duration       = 30.minutes
+
+            /**
+             * How often to probe an idle connection. Must stay below [maxLifetime].
+             * Set to [Duration.ZERO] to disable; connections are recycled at
+             * [maxLifetime] regardless.
+             */
+            var keepaliveTime: Duration     = 5.minutes
+
+            internal fun build() = PoolConfig(
+                maxSize, minIdle, connectionTimeout, idleTimeout, maxLifetime, keepaliveTime,
+            )
+        }
+
+        private companion object {
+            /** Hikari clamps a shorter connectionTimeout up to its default. */
+            private val HIKARI_CONNECTION_TIMEOUT_FLOOR = 250.milliseconds
+
+            /** Hikari rejects a shorter maxLifetime and disables a shorter keepaliveTime. */
+            private val HIKARI_LIFETIME_FLOOR = 30.seconds
+
+            /** Hikari clamps a shorter idleTimeout up to its default. */
+            private val HIKARI_IDLE_TIMEOUT_FLOOR = 10.seconds
         }
     }
 
@@ -94,6 +189,8 @@ data class SnowflakeConfig(
         var schema: String?                    = null
         var warehouse: String?                 = null
         var role: String?                      = null
+
+        /** Applied to every statement. [Duration.ZERO] means no limit. */
         var queryTimeout: Duration             = 5.minutes
         var fetchSize: Int                     = DEFAULT_FETCH_SIZE
         var dispatcher: CoroutineDispatcher    = Dispatchers.IO

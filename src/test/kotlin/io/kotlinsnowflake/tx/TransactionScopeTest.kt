@@ -20,6 +20,9 @@ class TransactionScopeTest : DescribeSpec({
         return conn
     }
 
+    /** A scope with the statement timeout disabled, unless a test asks for one. */
+    fun scope(conn: Connection, timeoutSeconds: Int = 0) = TransactionScope(conn, timeoutSeconds)
+
     describe("execute") {
 
         it("binds parameters positionally, starting at index 1") {
@@ -27,7 +30,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeUpdate() } returns 1
             val conn = connectionYielding(ps)
 
-            TransactionScope(conn).execute(
+            scope(conn).execute(
                 "UPDATE CAMPAIGNS SET STATUS = ? WHERE ID = ?",
                 "PAUSED",
                 7L,
@@ -45,7 +48,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeUpdate() } returns 3
             val conn = connectionYielding(ps)
 
-            TransactionScope(conn).execute("DELETE FROM KEYWORDS WHERE BID < ?", 0.05) shouldBe 3
+            scope(conn).execute("DELETE FROM KEYWORDS WHERE BID < ?", 0.05) shouldBe 3
         }
 
         it("closes the statement") {
@@ -53,7 +56,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeUpdate() } returns 0
             val conn = connectionYielding(ps)
 
-            TransactionScope(conn).execute("DELETE FROM KEYWORDS")
+            scope(conn).execute("DELETE FROM KEYWORDS")
 
             verify { ps.close() }
         }
@@ -63,7 +66,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeUpdate() } returns 0
             val conn = connectionYielding(ps)
 
-            TransactionScope(conn).execute("DELETE FROM KEYWORDS")
+            scope(conn).execute("DELETE FROM KEYWORDS")
 
             verify(exactly = 0) { ps.setObject(any(), any()) }
         }
@@ -80,7 +83,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeQuery() } returns rs
             val conn = connectionYielding(ps)
 
-            val statuses = TransactionScope(conn)
+            val statuses = scope(conn)
                 .query("SELECT STATUS FROM CAMPAIGNS WHERE ID = ?", 7L) { it.string("STATUS") }
 
             statuses shouldBe listOf("ACTIVE", "PAUSED")
@@ -96,7 +99,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeQuery() } returns rs
             val conn = connectionYielding(ps)
 
-            val result = TransactionScope(conn)
+            val result = scope(conn)
                 .query("SELECT STATUS FROM CAMPAIGNS") { it.string("STATUS") }
 
             result shouldBe emptyList()
@@ -108,20 +111,20 @@ class TransactionScopeTest : DescribeSpec({
         it("materializes rows before the result set is closed") {
             val meta = mockk<ResultSetMetaData>()
             every { meta.columnCount } returns 2
-            every { meta.getColumnName(1) } returns "ID"
-            every { meta.getColumnName(2) } returns "NAME"
+            every { meta.getColumnLabel(1) } returns "ID"
+            every { meta.getColumnLabel(2) } returns "NAME"
 
             val rs = mockk<ResultSet>(relaxed = true)
             every { rs.metaData } returns meta
             every { rs.next() } returnsMany listOf(true, false)
-            every { rs.getString("ID") } returns "7"
-            every { rs.getString("NAME") } returns "campaign-a"
+            every { rs.getString(1) } returns "7"
+            every { rs.getString(2) } returns "campaign-a"
 
             val ps = mockk<PreparedStatement>(relaxed = true)
             every { ps.executeQuery() } returns rs
             val conn = connectionYielding(ps)
 
-            val rows = TransactionScope(conn).query("SELECT ID, NAME FROM CAMPAIGNS")
+            val rows = scope(conn).query("SELECT ID, NAME FROM CAMPAIGNS")
 
             // The maps must survive the close(), which is the whole point of materializing.
             rows shouldBe listOf(mapOf("ID" to "7", "NAME" to "campaign-a"))
@@ -136,7 +139,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeBatch() } returns intArrayOf(1, 1)
             val conn = connectionYielding(ps)
 
-            TransactionScope(conn).batch(
+            scope(conn).batch(
                 "INSERT INTO KEYWORD_BIDS (KEYWORD_ID, BID) VALUES (?, ?)",
                 listOf(1L to 0.25, 2L to 0.50),
             ) { (id, bid) -> bind(id, bid) }
@@ -159,7 +162,7 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeBatch() } returns intArrayOf(1, 1, 1)
             val conn = connectionYielding(ps)
 
-            val counts = TransactionScope(conn).batch(
+            val counts = scope(conn).batch(
                 "INSERT INTO AUDIT_LOG (ACTION) VALUES (?)",
                 listOf("A", "B", "C"),
             ) { bind(it) }
@@ -172,11 +175,43 @@ class TransactionScopeTest : DescribeSpec({
             every { ps.executeBatch() } returns intArrayOf()
             val conn = connectionYielding(ps)
 
-            val counts = TransactionScope(conn)
+            val counts = scope(conn)
                 .batch("INSERT INTO AUDIT_LOG (ACTION) VALUES (?)", emptyList<String>()) { bind(it) }
 
             counts.toList() shouldBe emptyList()
             verify(exactly = 0) { ps.addBatch() }
+        }
+    }
+
+    describe("statement timeout") {
+
+        it("applies the client's timeout to every statement kind") {
+            val rs = mockk<ResultSet>(relaxed = true)
+            every { rs.next() } returns false
+            val ps = mockk<PreparedStatement>(relaxed = true)
+            every { ps.executeQuery() } returns rs
+            every { ps.executeUpdate() } returns 0
+            every { ps.executeBatch() } returns intArrayOf()
+            val conn = connectionYielding(ps)
+
+            with(scope(conn, timeoutSeconds = 42)) {
+                execute("DELETE FROM KEYWORDS")
+                query("SELECT 1") { it.string("X") }
+                query("SELECT 1")
+                batch("INSERT INTO T VALUES (?)", listOf("a")) { bind(it) }
+            }
+
+            verify(exactly = 4) { ps.queryTimeout = 42 }
+        }
+
+        it("leaves the driver default in place when the timeout is zero") {
+            val ps = mockk<PreparedStatement>(relaxed = true)
+            every { ps.executeUpdate() } returns 0
+            val conn = connectionYielding(ps)
+
+            scope(conn, timeoutSeconds = 0).execute("DELETE FROM KEYWORDS")
+
+            verify(exactly = 0) { ps.queryTimeout = any() }
         }
     }
 

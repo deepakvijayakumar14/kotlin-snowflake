@@ -11,7 +11,9 @@ import java.time.ZoneOffset
  * A single row returned from a Snowflake query.
  *
  * Provides typed column accessors with both nullable and non-null variants.
- * Column names are case-insensitive (normalized to uppercase internally).
+ * Column lookup is delegated to the JDBC driver's `findColumn`, which matches column
+ * labels case-insensitively, so `row.string("name")` and `row.string("NAME")` are
+ * equivalent. A column given an alias is addressed by that alias.
  *
  * ```kotlin
  * val name: String  = row.string("NAME")
@@ -94,18 +96,34 @@ class Row internal constructor(private val rs: ResultSet) {
     /** Returns the number of columns in this row. */
     val columnCount: Int get() = rs.metaData.columnCount
 
-    /** Returns column names as an ordered list. */
+    /**
+     * Returns column labels as an ordered list.
+     *
+     * Labels, not underlying names: `SELECT SUM(SPEND) AS TOTAL_SPEND` reports
+     * `TOTAL_SPEND`, which is what callers address the column by.
+     */
     val columnNames: List<String> get() =
-        (1..columnCount).map { rs.metaData.getColumnName(it) }
+        (1..columnCount).map { rs.metaData.getColumnLabel(it) }
 
-    /** Returns a map of all column names to their raw string values. */
-    fun toMap(): Map<String, String?> =
-        columnNames.associateWith { rs.getString(it) }
+    /**
+     * Returns a map of all column labels to their raw string values.
+     * Values are read by index, so duplicate labels do not collapse onto one value.
+     */
+    fun toMap(): Map<String, String?> = rs.toColumnMap()
 
     // -----------------------------------------------------------------------------------------
 
     private fun nullError(column: String) =
         "Column '$column' is NULL; use the nullable variant (e.g. stringOrNull, longOrNull)"
+}
+
+/**
+ * Reads the current row as a map of column label to raw string value.
+ * Shared by the raw query and stream paths so both agree on labelling.
+ */
+internal fun ResultSet.toColumnMap(): Map<String, String?> {
+    val meta = metaData
+    return (1..meta.columnCount).associate { meta.getColumnLabel(it) to getString(it) }
 }
 
 /** Functional interface for mapping a [Row] to a domain object. */
