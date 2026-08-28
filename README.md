@@ -1,7 +1,7 @@
 # kotlin-snowflake
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.kotlinsnowflake/kotlin-snowflake.svg)](https://search.maven.org/artifact/io.kotlinsnowflake/kotlin-snowflake)
-[![CI](https://github.com/deepakvijayakumar/kotlin-snowflake/actions/workflows/ci.yml/badge.svg)](https://github.com/deepakvijayakumar/kotlin-snowflake/actions)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.deepakvijayakumar14/kotlin-snowflake.svg)](https://central.sonatype.com/artifact/io.github.deepakvijayakumar14/kotlin-snowflake)
+[![CI](https://github.com/deepakvijayakumar14/kotlin-snowflake/actions/workflows/ci.yml/badge.svg)](https://github.com/deepakvijayakumar14/kotlin-snowflake/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A coroutine-native Kotlin client for [Snowflake](https://www.snowflake.com/) with an idiomatic query DSL, type-safe row mapping, and connection pooling — built for modern Kotlin/JVM backends.
@@ -211,7 +211,7 @@ snowflake {
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
-git clone https://github.com/deepakvijayakumar/kotlin-snowflake
+git clone https://github.com/deepakvijayakumar14/kotlin-snowflake
 cd kotlin-snowflake
 ./gradlew test
 ```

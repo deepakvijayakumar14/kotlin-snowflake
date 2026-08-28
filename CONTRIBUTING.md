@@ -5,7 +5,7 @@ Thanks for your interest in contributing to kotlin-snowflake!
 ## Getting started
 
 ```bash
-git clone https://github.com/deepakvijayakumar/kotlin-snowflake
+git clone https://github.com/deepakvijayakumar14/kotlin-snowflake
 cd kotlin-snowflake
 ./gradlew build
 ```
