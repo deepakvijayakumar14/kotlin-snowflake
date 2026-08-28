@@ -24,10 +24,6 @@ The official Snowflake JDBC driver works, but it was designed for Java. This lib
 
 ## Installation
 
-> **Not yet published.** No release has been pushed to Maven Central, so the
-> dependency below will not resolve. Build from source with `./gradlew publishToMavenLocal`
-> in the meantime.
-
 ```kotlin
 // build.gradle.kts
 dependencies {
