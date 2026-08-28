@@ -2,6 +2,7 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.deepakvijayakumar14/kotlin-snowflake.svg)](https://central.sonatype.com/artifact/io.github.deepakvijayakumar14/kotlin-snowflake)
 [![CI](https://github.com/deepakvijayakumar14/kotlin-snowflake/actions/workflows/ci.yml/badge.svg)](https://github.com/deepakvijayakumar14/kotlin-snowflake/actions)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)](CONTRIBUTING.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A coroutine-friendly Kotlin/JVM wrapper around the Snowflake JDBC driver: parameterized query construction, explicit row mapping, HikariCP pooling, transactions, batching, and `Flow`-based streaming.
@@ -33,7 +34,7 @@ The official Snowflake JDBC driver works, but it was designed for Java. This lib
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.deepakvijayakumar14:kotlin-snowflake:0.2.0")
+    implementation("io.github.deepakvijayakumar14:kotlin-snowflake:0.3.0")
 }
 ```
 
@@ -207,9 +208,9 @@ snowflake {
     warehouse = "COMPUTE_WH"
     role      = "MY_ROLE"
 
-    // Key-pair authentication (alternative to password)
-    privateKeyPath       = "/path/to/rsa_key.p8"
-    privateKeyPassphrase = env("KEY_PASSPHRASE")
+    // Key-pair authentication, instead of `password` above - setting both is an error
+    // privateKeyPath       = "/path/to/rsa_key.p8"
+    // privateKeyPassphrase = env("KEY_PASSPHRASE")
 
     // Connection pool (HikariCP)
     pool {
@@ -259,7 +260,9 @@ snowflake {
 
 ## Status
 
-Everything above JDBC - the DSL, row mapping, streaming, transactions, timeouts and configuration validation - is covered by the unit suite. The driver-level wiring in `ConnectionPool` (JDBC URL, driver class name, key-pair auth properties) has not yet been exercised against a live Snowflake account; see the integration suite for the tests that would.
+Everything above JDBC - the DSL, row mapping, streaming, transactions, timeouts and configuration validation - is covered by the unit suite, which mocks the JDBC surface and needs no account. The README examples on this page are themselves compiled and executed as tests, so they cannot drift from the API.
+
+The driver-level wiring in `ConnectionPool` (JDBC URL, driver class name, key-pair auth properties) has not yet been exercised against a live Snowflake account; see the integration suite for the tests that would.
 
 ---
 
@@ -270,10 +273,12 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 ```bash
 git clone https://github.com/deepakvijayakumar14/kotlin-snowflake
 cd kotlin-snowflake
-./gradlew test
+./gradlew check
 ```
 
-`./gradlew test` runs the unit suite offline. Integration tests run against a live Snowflake account and are excluded from `check`; copy `.env.example` to `.env`, fill in your credentials, and run `./gradlew integrationTest`. Without credentials they report as skipped.
+`check` is the whole gate — compile, unit tests, detekt, public ABI check against `api/kotlin-snowflake.api`, and a line-coverage floor. It needs no Snowflake account and no hosted service.
+
+Integration tests run against a live account and are excluded from `check`; copy `.env.example` to `.env`, fill in your credentials, and run `./gradlew integrationTest`. Without credentials they report as skipped, which is not the same as passing.
 
 ---
 

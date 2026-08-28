@@ -1,4 +1,5 @@
 import com.vanniktech.maven.publish.SonatypeHost
+import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -6,14 +7,24 @@ plugins {
     `java-library`
     id("org.jetbrains.dokka") version "1.9.20"
     id("io.gitlab.arturbosch.detekt") version "1.23.6"
+    id("org.jetbrains.kotlinx.kover") version "0.9.1"
+    // Fails the build when the public ABI drifts from api/kotlin-snowflake.api. Regenerate the
+    // dump with `./gradlew apiDump` and review the diff - that diff is the compatibility story
+    // a published library owes its consumers.
+    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.16.3"
     // Applies maven-publish and signing, and uploads to the Central Portal.
+    // 0.30.0 is the last line that supports Kotlin 1.9.x; 0.37.0 requires Kotlin Gradle
+    // Plugin 2.2+.
     id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
 // The Maven coordinates are io.github.<github-user>, which Central verifies through
 // GitHub account ownership. The Kotlin package namespace stays io.kotlinsnowflake.
 group   = "io.github.deepakvijayakumar14"
-version = "0.2.0"
+version = "0.3.0"
+
+/** Line coverage below this fails `check`. Set below the current figure, not at it. */
+val coverageFloorPercent = 90
 
 repositories {
     mavenCentral()
@@ -51,6 +62,47 @@ tasks.withType<KotlinCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Coverage is enforced here rather than reported to a hosted service: `check` fails if line
+// coverage drops below the floor, so a regression is caught by the same command that runs the
+// tests, with no account, token, or third party involved.
+//
+// The floor sits below the current figure on purpose. A threshold pinned to today's number turns
+// every honest refactor into a build failure, and the point is to catch coverage falling off a
+// cliff, not to chase the last percent.
+kover {
+    currentProject {
+        sources {
+            // The integration suite never runs offline, so counting its classes as application
+            // code would report the whole source set as uncovered and drag the floor to meet it.
+            excludedSourceSets.add("integrationTest")
+        }
+    }
+
+    reports {
+        filters {
+            excludes {
+                // ConnectionPool is the one class the unit suite cannot reach: constructing it
+                // opens a real Hikari pool against a real Snowflake account. It is covered by the
+                // integration suite instead, which is why it does not count against this floor.
+                classes("io.kotlinsnowflake.pool.ConnectionPool")
+                // Generated Kotlin metadata, not code anyone wrote or can test.
+                annotatedBy("kotlin.jvm.JvmSynthetic")
+            }
+        }
+        verify {
+            rule {
+                minBound(coverageFloorPercent, CoverageUnit.LINE)
+            }
+        }
+    }
+}
+
+/** Prints the project version alone, so the publish workflow can report and check it. */
+tasks.register("printVersion") {
+    val projectVersion = project.version.toString()
+    doLast { println(projectVersion) }
 }
 
 java {
@@ -117,7 +169,10 @@ mavenPublishing {
 
     pom {
         name.set("kotlin-snowflake")
-        description.set("Coroutine-native Kotlin client for Snowflake with idiomatic query DSL")
+        description.set(
+            "Coroutine-friendly Kotlin client for Snowflake: Flow streaming, parameterized " +
+                "query DSL, pooling, transactions and batching over the JDBC driver"
+        )
         url.set("https://github.com/deepakvijayakumar14/kotlin-snowflake")
         inceptionYear.set("2026")
 
@@ -148,3 +203,4 @@ detekt {
     buildUponDefaultConfig = true
     config.setFrom(files("$rootDir/config/detekt.yml"))
 }
+

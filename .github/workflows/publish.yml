@@ -39,9 +39,12 @@ jobs:
 
       - name: Report what will happen
         run: |
-          VERSION=$(./gradlew -q properties --property version | awk '/^version:/ {print $2}')
+          VERSION=$(./gradlew -q printVersion)
           echo "Version:  $VERSION"
           echo "Dry run:  ${{ inputs.dry_run }}"
+          case "$VERSION" in
+            *-SNAPSHOT) echo "::error::Central does not accept SNAPSHOT versions ($VERSION)"; exit 1 ;;
+          esac
           if [ "${{ inputs.dry_run }}" != "true" ]; then
             echo "::warning::Uploading $VERSION to Maven Central. Released versions cannot be deleted or overwritten."
           fi

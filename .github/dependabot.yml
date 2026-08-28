@@ -1,0 +1,31 @@
+version: 2
+
+updates:
+  # Kotlin, coroutines, the Snowflake driver, Hikari, slf4j and the Gradle plugins. Grouped so a
+  # routine version bump is one reviewable PR rather than six.
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "org.jetbrains.kotlinx*"
+      test-dependencies:
+        patterns:
+          - "io.kotest*"
+          - "io.mockk*"
+          - "ch.qos.logback*"
+    # The JDBC driver and the pool are the two dependencies whose behaviour this library
+    # actually depends on, so they stay ungrouped and get reviewed one at a time.
+    commit-message:
+      prefix: build
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
