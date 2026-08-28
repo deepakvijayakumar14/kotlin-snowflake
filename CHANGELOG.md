@@ -65,7 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apiCheck` runs as part of `check` and fails on unintended drift; regenerate with
   `./gradlew apiDump`.
 - Line-coverage floor enforced by Kover as part of `check`, so a coverage regression fails the
-  same command that runs the tests. No hosted service is involved. Coverage is 95%, the floor 90%.
+  same command that runs the tests. No hosted service is involved. Coverage is 96.7%, the floor
+  90%.
   `ConnectionPool` is excluded: constructing it opens a real pool against a real account.
 - CI runs one `check` task across JDK 17 and 21, uploading test results and an HTML coverage
   report as artifacts.
@@ -91,6 +92,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README no longer claims reified-generic data class mapping, a type-safe DSL, or
   Snowflake-specific type support, none of which the library provides; it documents what it
   does provide, and what it deliberately does not.
+- The README configuration reference no longer shows `password` and `privateKeyPath` set
+  together, which is now rejected.
+- `CONTRIBUTING.md` rewritten around `./gradlew check` as the single gate, and documents the
+  resource-closing and parameter-binding rules a change is held to.
+- The published POM description matches the README's positioning.
 
 ### Known limitations
 
