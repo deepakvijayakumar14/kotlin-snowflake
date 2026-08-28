@@ -36,7 +36,7 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
 
     // Snowflake JDBC
-    implementation("net.snowflake:snowflake-jdbc:3.16.0")
+    implementation("net.snowflake:snowflake-jdbc:4.3.3")
 
     // Connection pooling
     implementation("com.zaxxer:HikariCP:7.1.0")
