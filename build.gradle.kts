@@ -15,7 +15,7 @@ plugins {
     // Applies maven-publish and signing, and uploads to the Central Portal.
     // 0.30.0 is the last line that supports Kotlin 1.9.x; 0.37.0 requires Kotlin Gradle
     // Plugin 2.2+.
-    id("com.vanniktech.maven.publish") version "0.30.0"
+    id("com.vanniktech.maven.publish") version "0.37.0"
 }
 
 // The Maven coordinates are io.github.<github-user>, which Central verifies through
